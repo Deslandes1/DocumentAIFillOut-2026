@@ -1,5 +1,5 @@
-streamlit==1.37.0
-openai==1.35.0
-pypdf==4.2.0
-python-docx==1.1.0
-docxtpl==0.16.0
+streamlit
+openai
+pypdf
+python-docx
+docxtpl
