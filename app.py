@@ -1,12 +1,13 @@
 import streamlit as st
 import io
 import json
-import openai
+from openai import OpenAI
 from pypdf import PdfReader, PdfWriter
 from docx import Document as DocxDocument
 from docxtpl import DocxTemplate
 import tempfile
 import os
+import re
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Globalinternet.py Document Filler", layout="wide", initial_sidebar_state="expanded")
@@ -14,6 +15,8 @@ st.set_page_config(page_title="Globalinternet.py Document Filler", layout="wide"
 # ---------- AUTHENTICATION ----------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+
+PASSWORD = "20082010"
 
 if not st.session_state.authenticated:
     st.markdown(
@@ -54,29 +57,19 @@ if not st.session_state.authenticated:
         <div class="login-box">
             <h2>🔐 Globalinternet.py</h2>
             <p style="color: #ddd;">Enter your password to continue</p>
-            <form action="" method="post">
-                <input type="password" name="password" id="password_input" placeholder="Password" />
-                <button type="submit" id="login_btn">Access</button>
-            </form>
         </div>
-        <script>
-            document.getElementById('login_btn').addEventListener('click', function(e) {
-                e.preventDefault();
-                var pwd = document.getElementById('password_input').value;
-                if (pwd === '20082010') {
-                    window.location.href = window.location.href.split('?')[0] + '?auth=1';
-                } else {
-                    alert('Incorrect password');
-                }
-            });
-        </script>
         """,
         unsafe_allow_html=True,
     )
-    # Check for auth query param (workaround for Streamlit)
-    if st.query_params.get("auth") == "1":
-        st.session_state.authenticated = True
-        st.rerun()
+    with st.form("login_form"):
+        pwd = st.text_input("Password", type="password", placeholder="Enter password", label_visibility="collapsed")
+        submitted = st.form_submit_button("Access")
+        if submitted:
+            if pwd == PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password")
     st.stop()
 
 # ---------- LANGUAGE DICTIONARY ----------
@@ -256,9 +249,7 @@ if uploaded_file is not None:
                 if not st.secrets.get("OPENAI_API_KEY"):
                     st.error(t("error_api"))
                 else:
-                    openai.api_key = st.secrets["OPENAI_API_KEY"]
-                    # Prepare prompt
-                    lang = st.session_state.lang
+                    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                     prompt = f"""
                     You are a helpful assistant that fills PDF form fields.
                     The form has the following fields: {field_names}.
@@ -268,15 +259,18 @@ if uploaded_file is not None:
                     Only output valid JSON.
                     """
                     try:
-                        response = openai.ChatCompletion.create(
+                        response = client.chat.completions.create(
                             model="gpt-4",
                             messages=[{"role": "user", "content": prompt}],
                             temperature=0.7
                         )
                         ai_output = response.choices[0].message.content
-                        # Parse JSON
-                        ai_values = json.loads(ai_output)
-                        # Update session state for fields
+                        # Extract JSON from response
+                        json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
+                        if json_match:
+                            ai_values = json.loads(json_match.group())
+                        else:
+                            ai_values = json.loads(ai_output)
                         for f in field_names:
                             if f in ai_values:
                                 st.session_state[f"field_{f}"] = ai_values[f]
@@ -291,7 +285,6 @@ if uploaded_file is not None:
                 with cols[idx % 2]:
                     default_val = st.session_state.get(f"field_{field}", "")
                     st.markdown(f"**{field}**")
-                    # Show AI suggestion if available
                     if default_val:
                         st.caption(f"{t('ai_suggest')} {default_val}")
                     val = st.text_input(t("value_label"), value=default_val, key=f"input_{field}")
@@ -301,7 +294,6 @@ if uploaded_file is not None:
             if st.button(t("download_pdf")):
                 # Create a filled PDF in memory
                 writer = PdfWriter()
-                # Clone the original file
                 uploaded_file.seek(0)
                 reader2 = PdfReader(uploaded_file)
                 writer.append(reader2)
@@ -309,7 +301,6 @@ if uploaded_file is not None:
                 for field, value in field_values.items():
                     if field in writer.get_fields():
                         writer.update_page_form_field_values(writer.pages[0], {field: value})
-                # Write to bytes
                 output = io.BytesIO()
                 writer.write(output)
                 output.seek(0)
@@ -326,15 +317,12 @@ if uploaded_file is not None:
 
     elif "word" in file_type or "vnd.openxmlformats-officedocument.wordprocessingml.document" in file_type:
         # Process Word template with placeholders (e.g., {{name}})
-        # Save uploaded file to temp
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
 
         doc = DocxDocument(tmp_path)
-        # Extract all text to find placeholders: {{...}}
         full_text = " ".join([p.text for p in doc.paragraphs])
-        import re
         placeholders = re.findall(r'{{(.*?)}}', full_text)
         placeholders = list(set(placeholders))
         if not placeholders:
@@ -349,7 +337,7 @@ if uploaded_file is not None:
                 if not st.secrets.get("OPENAI_API_KEY"):
                     st.error(t("error_api"))
                 else:
-                    openai.api_key = st.secrets["OPENAI_API_KEY"]
+                    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
                     prompt = f"""
                     You are a helpful assistant that fills Word document placeholders.
                     The placeholders are: {placeholders}.
@@ -358,13 +346,17 @@ if uploaded_file is not None:
                     Only output JSON.
                     """
                     try:
-                        response = openai.ChatCompletion.create(
+                        response = client.chat.completions.create(
                             model="gpt-4",
                             messages=[{"role": "user", "content": prompt}],
                             temperature=0.7
                         )
                         ai_output = response.choices[0].message.content
-                        ai_values = json.loads(ai_output)
+                        json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
+                        if json_match:
+                            ai_values = json.loads(json_match.group())
+                        else:
+                            ai_values = json.loads(ai_output)
                         for p in placeholders:
                             if p in ai_values:
                                 st.session_state[f"field_{p}"] = ai_values[p]
@@ -386,7 +378,6 @@ if uploaded_file is not None:
 
             # Fill template and download
             if st.button(t("download_docx")):
-                # Use docxtpl to fill
                 context = placeholder_values
                 docx_template = DocxTemplate(tmp_path)
                 docx_template.render(context)
@@ -400,9 +391,6 @@ if uploaded_file is not None:
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
                 st.success(t("success_fill"))
-
-            # Also offer PDF download (convert Word to PDF? Not trivial, so we'll skip for now)
-            # We can mention that they can download as Word and convert if needed.
 
         os.unlink(tmp_path)
 
