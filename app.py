@@ -9,7 +9,7 @@ import tempfile
 import os
 import re
 import base64
-from gtts import gTTS  # for voice explanation
+from gtts import gTTS
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Globalinternet.py Document Filler", layout="wide", initial_sidebar_state="expanded")
@@ -28,7 +28,7 @@ if not st.session_state.authenticated:
             max-width: 400px;
             margin: 10% auto;
             padding: 2rem;
-            background: #1a5276;  /* Blue instead of purple */
+            background: #1a5276;
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(26, 82, 118, 0.4);
             text-align: center;
@@ -161,16 +161,21 @@ def t(key):
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
-    st.markdown("""
-    <div style="text-align:center; padding:10px;">
-        <div style="font-size:4rem;">🌍</div>
-        <h3 style="color:#1a5276;">Globalinternet.py</h3>
-        <p style="color:#2c3e50; font-weight:bold;">Online Software Company</p>
-        <hr style="border-color:#1a5276;">
-        <p style="font-size:0.9rem;">💼 Built by <b>Gesner Deslandes</b><br>Engineer In Chief</p>
-        <p style="font-size:0.85rem;">📞 (509) 4738-5663<br>✉️ deslandes78@gmail.com</p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Profile Photo and Name
+    st.markdown(
+        """
+        <div style="text-align:center; padding:10px;">
+            <img src="https://github.com/Deslandes1/DocumentAIFillOut-2026/blob/main/Gesner%20Deslandes%202026.png?raw=true" 
+                 style="width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid #1a5276; margin-bottom:5px;">
+            <h3 style="color:#1a5276; margin:0;">Gesner Deslandes</h3>
+            <p style="color:#2c3e50; font-weight:bold; margin:0;">Engineer In Chief</p>
+            <hr style="border-color:#1a5276;">
+            <p style="font-size:0.9rem;">💼 Built by <b>Gesner Deslandes</b><br>Engineer In Chief</p>
+            <p style="font-size:0.85rem;">📞 (509) 4738-5663<br>✉️ deslandes78@gmail.com</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     lang_choice = st.selectbox(
         t("language"),
@@ -186,7 +191,6 @@ with st.sidebar:
 
     # ---------- VOICE EXPLANATION ----------
     if st.button(t("listen_explanation"), use_container_width=True):
-        # Generate explanation text based on selected language
         if st.session_state.lang == "en":
             explanation = (
                 "This application helps you fill out any document automatically. "
@@ -205,7 +209,7 @@ with st.sidebar:
                 "Enfin, téléchargez le document rempli au format PDF ou Word. "
                 "Toutes les données sont traitées de manière sécurisée, et vous pouvez l'utiliser pour des demandes de visa, des contrats, etc."
             )
-        else:  # Spanish
+        else:
             explanation = (
                 "Esta aplicación le ayuda a rellenar automáticamente cualquier documento. "
                 "Puede subir un formulario PDF con campos rellenables o un documento Word con marcadores como doble llave nombre. "
@@ -214,17 +218,13 @@ with st.sidebar:
                 "Finalmente, descargue el documento rellenado como PDF o Word. "
                 "Todos los datos se procesan de forma segura, y puede usarlo para solicitudes de visa, contratos, etc."
             )
-        # Generate audio using gTTS
         try:
             tts = gTTS(text=explanation, lang=st.session_state.lang, slow=False)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
                 tts.save(tmp.name)
                 audio_path = tmp.name
-            # Read audio and encode as base64 for embedding
             with open(audio_path, "rb") as f:
                 audio_bytes = f.read()
-            b64 = base64.b64encode(audio_bytes).decode()
-            # Play audio
             st.audio(audio_bytes, format="audio/mp3")
             os.unlink(audio_path)
             st.success("▶️ Audio playing...")
@@ -303,7 +303,6 @@ def get_groq_client():
 if uploaded_file is not None:
     file_type = uploaded_file.type
     if "pdf" in file_type:
-        # Process PDF
         try:
             reader = PdfReader(uploaded_file)
             fields = reader.get_fields()
@@ -314,7 +313,6 @@ if uploaded_file is not None:
             st.success(f"✅ Found {len(field_names)} fillable fields.")
             st.subheader(t("fields_title"))
 
-            # User description for AI auto-fill
             user_description = st.text_area(t("auto_fill_hint"), height=100)
             if st.button(t("auto_fill_btn")):
                 client = get_groq_client()
@@ -348,7 +346,6 @@ if uploaded_file is not None:
                     except Exception as e:
                         st.error(f"AI error: {e}")
 
-            # Manual fields display
             field_values = {}
             cols = st.columns(2)
             for idx, field in enumerate(field_names):
@@ -360,7 +357,6 @@ if uploaded_file is not None:
                     val = st.text_input(t("value_label"), value=default_val, key=f"input_{field}")
                     field_values[field] = val
 
-            # Fill document
             if st.button(t("download_pdf")):
                 writer = PdfWriter()
                 uploaded_file.seek(0)
@@ -384,7 +380,6 @@ if uploaded_file is not None:
             st.error(f"Error: {e}")
 
     elif "word" in file_type or "vnd.openxmlformats-officedocument.wordprocessingml.document" in file_type:
-        # Process Word template with placeholders
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
