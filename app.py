@@ -229,6 +229,14 @@ st.caption(t("company") + " | " + t("built_by"))
 # File upload
 uploaded_file = st.file_uploader(t("upload_label"), type=["pdf", "docx"], help=t("upload_help"))
 
+# Helper function to get OpenAI client
+def get_openai_client():
+    api_key = st.secrets.get("OPENAI_API_KEY")
+    if not api_key:
+        st.error(t("error_api"))
+        return None
+    return OpenAI(api_key=api_key)
+
 if uploaded_file is not None:
     file_type = uploaded_file.type
     if "pdf" in file_type:
@@ -246,10 +254,8 @@ if uploaded_file is not None:
             # User description for AI auto-fill
             user_description = st.text_area(t("auto_fill_hint"), height=100)
             if st.button(t("auto_fill_btn")):
-                if not st.secrets.get("OPENAI_API_KEY"):
-                    st.error(t("error_api"))
-                else:
-                    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                client = get_openai_client()
+                if client:
                     prompt = f"""
                     You are a helpful assistant that fills PDF form fields.
                     The form has the following fields: {field_names}.
@@ -259,8 +265,10 @@ if uploaded_file is not None:
                     Only output valid JSON.
                     """
                     try:
+                        # Use gpt-3.5-turbo as fallback; you can change to "gpt-4" if you have access
+                        model = "gpt-3.5-turbo"
                         response = client.chat.completions.create(
-                            model="gpt-4",
+                            model=model,
                             messages=[{"role": "user", "content": prompt}],
                             temperature=0.7
                         )
@@ -334,10 +342,8 @@ if uploaded_file is not None:
             # User description for AI
             user_description = st.text_area(t("auto_fill_hint"), height=100)
             if st.button(t("auto_fill_btn")):
-                if not st.secrets.get("OPENAI_API_KEY"):
-                    st.error(t("error_api"))
-                else:
-                    client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                client = get_openai_client()
+                if client:
                     prompt = f"""
                     You are a helpful assistant that fills Word document placeholders.
                     The placeholders are: {placeholders}.
@@ -346,8 +352,9 @@ if uploaded_file is not None:
                     Only output JSON.
                     """
                     try:
+                        model = "gpt-3.5-turbo"
                         response = client.chat.completions.create(
-                            model="gpt-4",
+                            model=model,
                             messages=[{"role": "user", "content": prompt}],
                             temperature=0.7
                         )
