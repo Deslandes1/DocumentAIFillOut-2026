@@ -1,13 +1,15 @@
 import streamlit as st
 import io
 import json
-from groq import Groq  # <-- using Groq instead of OpenAI
+from groq import Groq
 from pypdf import PdfReader, PdfWriter
 from docx import Document as DocxDocument
 from docxtpl import DocxTemplate
 import tempfile
 import os
 import re
+import base64
+from gtts import gTTS  # for voice explanation
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Globalinternet.py Document Filler", layout="wide", initial_sidebar_state="expanded")
@@ -26,9 +28,9 @@ if not st.session_state.authenticated:
             max-width: 400px;
             margin: 10% auto;
             padding: 2rem;
-            background: #6a0dad;
+            background: #1a5276;  /* Blue instead of purple */
             border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(106, 13, 173, 0.4);
+            box-shadow: 0 10px 30px rgba(26, 82, 118, 0.4);
             text-align: center;
         }
         .login-box h2 {
@@ -98,6 +100,7 @@ LANG = {
         "error_api": "Groq API key not set. Please add GROQ_API_KEY in secrets.",
         "success_fill": "Document filled successfully!",
         "ai_provider": "Groq (Llama 3.1)",
+        "listen_explanation": "🔊 AI Female Voice – How This App Works",
     },
     "fr": {
         "title": "📄 Remplisseur de documents",
@@ -123,6 +126,7 @@ LANG = {
         "error_api": "Clé API Groq non définie. Ajoutez GROQ_API_KEY dans les secrets.",
         "success_fill": "Document rempli avec succès !",
         "ai_provider": "Groq (Llama 3.1)",
+        "listen_explanation": "🔊 Voix IA Féminine – Comment fonctionne cette app",
     },
     "es": {
         "title": "📄 Rellenador de documentos",
@@ -148,6 +152,7 @@ LANG = {
         "error_api": "Clave API de Groq no configurada. Agrega GROQ_API_KEY en los secretos.",
         "success_fill": "¡Documento rellenado con éxito!",
         "ai_provider": "Groq (Llama 3.1)",
+        "listen_explanation": "🔊 Voz IA Femenina – Cómo funciona esta app",
     }
 }
 
@@ -159,9 +164,9 @@ with st.sidebar:
     st.markdown("""
     <div style="text-align:center; padding:10px;">
         <div style="font-size:4rem;">🌍</div>
-        <h3 style="color:#6a0dad;">Globalinternet.py</h3>
-        <p style="color:#4a0a6b; font-weight:bold;">Online Software Company</p>
-        <hr style="border-color:#6a0dad;">
+        <h3 style="color:#1a5276;">Globalinternet.py</h3>
+        <p style="color:#2c3e50; font-weight:bold;">Online Software Company</p>
+        <hr style="border-color:#1a5276;">
         <p style="font-size:0.9rem;">💼 Built by <b>Gesner Deslandes</b><br>Engineer In Chief</p>
         <p style="font-size:0.85rem;">📞 (509) 4738-5663<br>✉️ deslandes78@gmail.com</p>
     </div>
@@ -177,14 +182,63 @@ with st.sidebar:
 
     st.info(f"🤖 AI: {t('ai_provider')}")
 
-# ---------- PURPLE THEME CSS ----------
+    st.divider()
+
+    # ---------- VOICE EXPLANATION ----------
+    if st.button(t("listen_explanation"), use_container_width=True):
+        # Generate explanation text based on selected language
+        if st.session_state.lang == "en":
+            explanation = (
+                "This application helps you fill out any document automatically. "
+                "You can upload a PDF form with fillable fields or a Word document with placeholders like double curly braces name. "
+                "Describe the information you want to fill, and the AI will suggest values for each field. "
+                "You can also manually adjust any field. "
+                "Finally, download the filled document as a PDF or Word file. "
+                "All data is processed securely, and you can use this for visa applications, contracts, and more."
+            )
+        elif st.session_state.lang == "fr":
+            explanation = (
+                "Cette application vous aide à remplir automatiquement tout document. "
+                "Vous pouvez télécharger un formulaire PDF avec des champs remplissables ou un document Word avec des espaces réservés comme double accolade nom. "
+                "Décrivez les informations à remplir, et l'IA suggérera des valeurs pour chaque champ. "
+                "Vous pouvez également ajuster manuellement chaque champ. "
+                "Enfin, téléchargez le document rempli au format PDF ou Word. "
+                "Toutes les données sont traitées de manière sécurisée, et vous pouvez l'utiliser pour des demandes de visa, des contrats, etc."
+            )
+        else:  # Spanish
+            explanation = (
+                "Esta aplicación le ayuda a rellenar automáticamente cualquier documento. "
+                "Puede subir un formulario PDF con campos rellenables o un documento Word con marcadores como doble llave nombre. "
+                "Describa la información que desea rellenar, y la IA sugerirá valores para cada campo. "
+                "También puede ajustar manualmente cada campo. "
+                "Finalmente, descargue el documento rellenado como PDF o Word. "
+                "Todos los datos se procesan de forma segura, y puede usarlo para solicitudes de visa, contratos, etc."
+            )
+        # Generate audio using gTTS
+        try:
+            tts = gTTS(text=explanation, lang=st.session_state.lang, slow=False)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+                tts.save(tmp.name)
+                audio_path = tmp.name
+            # Read audio and encode as base64 for embedding
+            with open(audio_path, "rb") as f:
+                audio_bytes = f.read()
+            b64 = base64.b64encode(audio_bytes).decode()
+            # Play audio
+            st.audio(audio_bytes, format="audio/mp3")
+            os.unlink(audio_path)
+            st.success("▶️ Audio playing...")
+        except Exception as e:
+            st.error(f"Could not generate audio: {e}")
+
+# ---------- BLUE THEME CSS ----------
 st.markdown("""
 <style>
     .stApp {
-        background: linear-gradient(145deg, #f3e8ff 0%, #e6d5f5 100%);
+        background: linear-gradient(145deg, #eaf2f8 0%, #d4e6f1 100%);
     }
     .stButton>button {
-        background-color: #6a0dad;
+        background-color: #1a5276;
         color: white;
         border-radius: 40px;
         border: none;
@@ -193,36 +247,40 @@ st.markdown("""
         transition: all 0.3s;
     }
     .stButton>button:hover {
-        background-color: #8a2be2;
+        background-color: #2471a3;
         transform: scale(1.02);
-        box-shadow: 0 8px 20px rgba(106, 13, 173, 0.3);
+        box-shadow: 0 8px 20px rgba(26, 82, 118, 0.3);
     }
     .stFileUploader>div>button {
-        background-color: #6a0dad !important;
+        background-color: #1a5276 !important;
     }
     .stFileUploader>div>button:hover {
-        background-color: #8a2be2 !important;
+        background-color: #2471a3 !important;
     }
     .stTextInput>div>div>input, .stTextArea>div>textarea {
-        border: 2px solid #6a0dad !important;
+        border: 2px solid #1a5276 !important;
         border-radius: 30px !important;
         padding: 10px 20px !important;
     }
     .stSelectbox>div>div>select {
-        border: 2px solid #6a0dad !important;
+        border: 2px solid #1a5276 !important;
         border-radius: 30px !important;
         padding: 8px 15px !important;
     }
     .stAlert {
         border-radius: 20px;
-        border-left: 6px solid #6a0dad;
+        border-left: 6px solid #1a5276;
     }
     h1, h2, h3 {
-        color: #4a0a6b;
+        color: #154360;
     }
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
+    }
+    [data-testid="stSidebar"] {
+        background: #eaf2f8;
+        border-right: 2px solid #1a5276;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -270,7 +328,7 @@ if uploaded_file is not None:
                     Only output valid JSON.
                     """
                     try:
-                        model = "llama-3.1-8b-instant"  # Fast, free, good for structured output
+                        model = "llama-3.1-8b-instant"
                         response = client.chat.completions.create(
                             model=model,
                             messages=[{"role": "user", "content": prompt}],
@@ -278,7 +336,6 @@ if uploaded_file is not None:
                             max_tokens=1024
                         )
                         ai_output = response.choices[0].message.content
-                        # Extract JSON from response
                         json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
                         if json_match:
                             ai_values = json.loads(json_match.group())
@@ -305,12 +362,10 @@ if uploaded_file is not None:
 
             # Fill document
             if st.button(t("download_pdf")):
-                # Create a filled PDF in memory
                 writer = PdfWriter()
                 uploaded_file.seek(0)
                 reader2 = PdfReader(uploaded_file)
                 writer.append(reader2)
-                # Update fields
                 for field, value in field_values.items():
                     if field in writer.get_fields():
                         writer.update_page_form_field_values(writer.pages[0], {field: value})
@@ -329,7 +384,7 @@ if uploaded_file is not None:
             st.error(f"Error: {e}")
 
     elif "word" in file_type or "vnd.openxmlformats-officedocument.wordprocessingml.document" in file_type:
-        # Process Word template with placeholders (e.g., {{name}})
+        # Process Word template with placeholders
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
@@ -344,7 +399,6 @@ if uploaded_file is not None:
             st.success(f"✅ Found placeholders: {placeholders}")
             st.subheader(t("fields_title"))
 
-            # User description for AI
             user_description = st.text_area(t("auto_fill_hint"), height=100)
             if st.button(t("auto_fill_btn")):
                 client = get_groq_client()
@@ -377,7 +431,6 @@ if uploaded_file is not None:
                     except Exception as e:
                         st.error(f"AI error: {e}")
 
-            # Manual input for each placeholder
             placeholder_values = {}
             cols = st.columns(2)
             for idx, placeholder in enumerate(placeholders):
@@ -389,7 +442,6 @@ if uploaded_file is not None:
                     val = st.text_input(t("value_label"), value=default_val, key=f"input_{placeholder}")
                     placeholder_values[placeholder] = val
 
-            # Fill template and download
             if st.button(t("download_docx")):
                 context = placeholder_values
                 docx_template = DocxTemplate(tmp_path)
