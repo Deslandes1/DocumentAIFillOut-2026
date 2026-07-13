@@ -10,6 +10,11 @@ import os
 import re
 import base64
 from gtts import gTTS
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Globalinternet.py Document Filler", layout="wide", initial_sidebar_state="expanded")
@@ -87,6 +92,9 @@ LANG = {
         "manual_fill_title": "Manual Fill",
         "download_pdf": "⬇️ Download Filled PDF",
         "download_docx": "⬇️ Download Filled Word",
+        "send_email": "📧 Send to my Google Docs (email)",
+        "email_sent": "✅ Document sent to your email! Check your inbox.",
+        "email_error": "Email sending failed. Check SMTP settings.",
         "ai_suggest": "AI suggestion for this field:",
         "field_label": "Field:",
         "value_label": "Value:",
@@ -101,6 +109,9 @@ LANG = {
         "success_fill": "Document filled successfully!",
         "ai_provider": "Groq (Llama 3.1)",
         "listen_explanation": "🔊 AI Female Voice – How This App Works",
+        "recipient_email": "Recipient email",
+        "email_subject": "Filled document from Document Filler",
+        "email_body": "Please find the filled document attached. You can open it directly in Google Docs from this email.",
     },
     "fr": {
         "title": "📄 Remplisseur de documents",
@@ -113,6 +124,9 @@ LANG = {
         "manual_fill_title": "Remplissage manuel",
         "download_pdf": "⬇️ Télécharger le PDF rempli",
         "download_docx": "⬇️ Télécharger le Word rempli",
+        "send_email": "📧 Envoyer à mon Google Docs (email)",
+        "email_sent": "✅ Document envoyé à votre email ! Vérifiez votre boîte.",
+        "email_error": "L'envoi d'email a échoué. Vérifiez les paramètres SMTP.",
         "ai_suggest": "Suggestion IA pour ce champ :",
         "field_label": "Champ :",
         "value_label": "Valeur :",
@@ -127,6 +141,9 @@ LANG = {
         "success_fill": "Document rempli avec succès !",
         "ai_provider": "Groq (Llama 3.1)",
         "listen_explanation": "🔊 Voix IA Féminine – Comment fonctionne cette app",
+        "recipient_email": "Email du destinataire",
+        "email_subject": "Document rempli depuis Document Filler",
+        "email_body": "Veuillez trouver le document rempli en pièce jointe. Vous pouvez l'ouvrir directement dans Google Docs à partir de cet email.",
     },
     "es": {
         "title": "📄 Rellenador de documentos",
@@ -139,6 +156,9 @@ LANG = {
         "manual_fill_title": "Relleno manual",
         "download_pdf": "⬇️ Descargar PDF relleno",
         "download_docx": "⬇️ Descargar Word relleno",
+        "send_email": "📧 Enviar a mi Google Docs (email)",
+        "email_sent": "✅ ¡Documento enviado a su email! Revise su bandeja.",
+        "email_error": "Error al enviar el email. Verifique la configuración SMTP.",
         "ai_suggest": "Sugerencia IA para este campo:",
         "field_label": "Campo:",
         "value_label": "Valor:",
@@ -153,6 +173,9 @@ LANG = {
         "success_fill": "¡Documento rellenado con éxito!",
         "ai_provider": "Groq (Llama 3.1)",
         "listen_explanation": "🔊 Voz IA Femenina – Cómo funciona esta app",
+        "recipient_email": "Email del destinatario",
+        "email_subject": "Documento rellenado desde Document Filler",
+        "email_body": "Adjunto encontrará el documento rellenado. Puede abrirlo directamente en Google Docs desde este email.",
     }
 }
 
@@ -161,7 +184,6 @@ def t(key):
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
-    # Profile Photo and Name
     st.markdown(
         """
         <div style="text-align:center; padding:10px;">
@@ -197,7 +219,7 @@ with st.sidebar:
                 "You can upload a PDF form with fillable fields or a Word document with placeholders like double curly braces name. "
                 "Describe the information you want to fill, and the AI will suggest values for each field. "
                 "You can also manually adjust any field. "
-                "Finally, download the filled document as a PDF or Word file. "
+                "Finally, download the filled document as a PDF or Word file, or send it to your email to open in Google Docs. "
                 "All data is processed securely, and you can use this for visa applications, contracts, and more."
             )
         elif st.session_state.lang == "fr":
@@ -206,7 +228,7 @@ with st.sidebar:
                 "Vous pouvez télécharger un formulaire PDF avec des champs remplissables ou un document Word avec des espaces réservés comme double accolade nom. "
                 "Décrivez les informations à remplir, et l'IA suggérera des valeurs pour chaque champ. "
                 "Vous pouvez également ajuster manuellement chaque champ. "
-                "Enfin, téléchargez le document rempli au format PDF ou Word. "
+                "Enfin, téléchargez le document rempli au format PDF ou Word, ou envoyez-le à votre email pour l'ouvrir dans Google Docs. "
                 "Toutes les données sont traitées de manière sécurisée, et vous pouvez l'utiliser pour des demandes de visa, des contrats, etc."
             )
         else:
@@ -215,7 +237,7 @@ with st.sidebar:
                 "Puede subir un formulario PDF con campos rellenables o un documento Word con marcadores como doble llave nombre. "
                 "Describa la información que desea rellenar, y la IA sugerirá valores para cada campo. "
                 "También puede ajustar manualmente cada campo. "
-                "Finalmente, descargue el documento rellenado como PDF o Word. "
+                "Finalmente, descargue el documento rellenado como PDF o Word, o envíelo a su email para abrirlo en Google Docs. "
                 "Todos los datos se procesan de forma segura, y puede usarlo para solicitudes de visa, contratos, etc."
             )
         try:
@@ -285,14 +307,48 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ---------- EMAIL SENDING FUNCTION ----------
+def send_email_attachment(recipient, subject, body, file_bytes, filename):
+    try:
+        smtp_server = st.secrets.get("SMTP_SERVER", "smtp.gmail.com")
+        smtp_port = int(st.secrets.get("SMTP_PORT", 587))
+        smtp_user = st.secrets.get("SMTP_USERNAME", "deslandes78@gmail.com")
+        smtp_pass = st.secrets.get("SMTP_PASSWORD")
+        if not smtp_pass:
+            st.error("SMTP password not set in secrets.")
+            return False
+
+        msg = MIMEMultipart()
+        msg["From"] = smtp_user
+        msg["To"] = recipient
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(file_bytes)
+        encoders.encode_base64(part)
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename={filename}"
+        )
+        msg.attach(part)
+
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Email error: {e}")
+        return False
+
 # ---------- MAIN PAGE ----------
 st.title(t("title"))
 st.caption(t("company") + " | " + t("built_by"))
 
-# File upload
 uploaded_file = st.file_uploader(t("upload_label"), type=["pdf", "docx"], help=t("upload_help"))
 
-# Helper function to get Groq client
 def get_groq_client():
     api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
@@ -302,6 +358,7 @@ def get_groq_client():
 
 if uploaded_file is not None:
     file_type = uploaded_file.type
+
     if "pdf" in file_type:
         try:
             reader = PdfReader(uploaded_file)
@@ -357,24 +414,49 @@ if uploaded_file is not None:
                     val = st.text_input(t("value_label"), value=default_val, key=f"input_{field}")
                     field_values[field] = val
 
-            if st.button(t("download_pdf")):
-                writer = PdfWriter()
-                uploaded_file.seek(0)
-                reader2 = PdfReader(uploaded_file)
-                writer.append(reader2)
-                for field, value in field_values.items():
-                    if field in writer.get_fields():
-                        writer.update_page_form_field_values(writer.pages[0], {field: value})
-                output = io.BytesIO()
-                writer.write(output)
-                output.seek(0)
-                st.download_button(
-                    label="📥 Download Filled PDF",
-                    data=output,
-                    file_name="filled_document.pdf",
-                    mime="application/pdf"
-                )
-                st.success(t("success_fill"))
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(t("download_pdf")):
+                    writer = PdfWriter()
+                    uploaded_file.seek(0)
+                    reader2 = PdfReader(uploaded_file)
+                    writer.append(reader2)
+                    for field, value in field_values.items():
+                        if field in writer.get_fields():
+                            writer.update_page_form_field_values(writer.pages[0], {field: value})
+                    output = io.BytesIO()
+                    writer.write(output)
+                    output.seek(0)
+                    file_bytes = output.getvalue()
+                    st.download_button(
+                        label="📥 Download Filled PDF",
+                        data=file_bytes,
+                        file_name="filled_document.pdf",
+                        mime="application/pdf"
+                    )
+                    st.success(t("success_fill"))
+                    # Store file for email
+                    st.session_state["pdf_bytes"] = file_bytes
+                    st.session_state["pdf_filename"] = "filled_document.pdf"
+
+            with col2:
+                if st.button(t("send_email")):
+                    if "pdf_bytes" not in st.session_state:
+                        st.warning("Please generate the PDF first by clicking Download.")
+                    else:
+                        recipient = st.secrets.get("EMAIL_TO", "deslandes78@gmail.com")
+                        subject = t("email_subject")
+                        body = t("email_body")
+                        if send_email_attachment(
+                            recipient,
+                            subject,
+                            body,
+                            st.session_state["pdf_bytes"],
+                            st.session_state["pdf_filename"]
+                        ):
+                            st.success(t("email_sent"))
+                        else:
+                            st.error(t("email_error"))
 
         except Exception as e:
             st.error(f"Error: {e}")
@@ -437,20 +519,44 @@ if uploaded_file is not None:
                     val = st.text_input(t("value_label"), value=default_val, key=f"input_{placeholder}")
                     placeholder_values[placeholder] = val
 
-            if st.button(t("download_docx")):
-                context = placeholder_values
-                docx_template = DocxTemplate(tmp_path)
-                docx_template.render(context)
-                output = io.BytesIO()
-                docx_template.save(output)
-                output.seek(0)
-                st.download_button(
-                    label="📥 Download Filled Word",
-                    data=output,
-                    file_name="filled_document.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
-                st.success(t("success_fill"))
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(t("download_docx")):
+                    context = placeholder_values
+                    docx_template = DocxTemplate(tmp_path)
+                    docx_template.render(context)
+                    output = io.BytesIO()
+                    docx_template.save(output)
+                    output.seek(0)
+                    file_bytes = output.getvalue()
+                    st.download_button(
+                        label="📥 Download Filled Word",
+                        data=file_bytes,
+                        file_name="filled_document.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    )
+                    st.success(t("success_fill"))
+                    st.session_state["docx_bytes"] = file_bytes
+                    st.session_state["docx_filename"] = "filled_document.docx"
+
+            with col2:
+                if st.button(t("send_email")):
+                    if "docx_bytes" not in st.session_state:
+                        st.warning("Please generate the Word file first by clicking Download.")
+                    else:
+                        recipient = st.secrets.get("EMAIL_TO", "deslandes78@gmail.com")
+                        subject = t("email_subject")
+                        body = t("email_body")
+                        if send_email_attachment(
+                            recipient,
+                            subject,
+                            body,
+                            st.session_state["docx_bytes"],
+                            st.session_state["docx_filename"]
+                        ):
+                            st.success(t("email_sent"))
+                        else:
+                            st.error(t("email_error"))
 
         os.unlink(tmp_path)
 
