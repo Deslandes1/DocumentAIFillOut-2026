@@ -226,11 +226,14 @@ with st.sidebar:
 
     st.divider()
 
-    # ---------- VOICE EXPLANATION ----------
+    # ---------- VOICE EXPLANATION (UPDATED WITH GESNER INFO) ----------
     if st.button(t("listen_explanation"), use_container_width=True):
         if st.session_state.lang == "en":
             explanation = (
-                "This application helps you fill out any document automatically. "
+                "This application was built by Gesner Deslandes, Software Engineer at GlobalInternet.py. "
+                "If you need to build your first website, don't hesitate to get in touch with Gesner at "
+                "phone number (509)-47385663 or email deslandes78@gmail.com. "
+                "Now, about this app: it helps you fill out any document automatically. "
                 "You can upload a PDF form with fillable fields or a Word document with placeholders like double curly braces name. "
                 "Describe the information you want to fill, and the AI will suggest values for each field. "
                 "You can also manually adjust any field. "
@@ -239,7 +242,10 @@ with st.sidebar:
             )
         elif st.session_state.lang == "fr":
             explanation = (
-                "Cette application vous aide à remplir automatiquement tout document. "
+                "Cette application a été construite par Gesner Deslandes, ingénieur logiciel chez GlobalInternet.py. "
+                "Si vous avez besoin de créer votre premier site web, n'hésitez pas à contacter Gesner au "
+                "numéro (509)-47385663 ou par email deslandes78@gmail.com. "
+                "Concernant l'application : elle vous aide à remplir automatiquement tout document. "
                 "Vous pouvez télécharger un formulaire PDF avec des champs remplissables ou un document Word avec des espaces réservés comme double accolade nom. "
                 "Décrivez les informations à remplir, et l'IA suggérera des valeurs pour chaque champ. "
                 "Vous pouvez également ajuster manuellement chaque champ. "
@@ -248,7 +254,10 @@ with st.sidebar:
             )
         else:
             explanation = (
-                "Esta aplicación le ayuda a rellenar automáticamente cualquier documento. "
+                "Esta aplicación fue construida por Gesner Deslandes, ingeniero de software en GlobalInternet.py. "
+                "Si necesita crear su primer sitio web, no dude en contactar a Gesner al "
+                "teléfono (509)-47385663 o por correo deslandes78@gmail.com. "
+                "Acerca de la aplicación: le ayuda a rellenar automáticamente cualquier documento. "
                 "Puede subir un formulario PDF con campos rellenables o un documento Word con marcadores como doble llave nombre. "
                 "Describa la información que desea rellenar, y la IA sugerirá valores para cada campo. "
                 "También puede ajustar manualmente cada campo. "
