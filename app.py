@@ -112,6 +112,11 @@ LANG = {
         "recipient_email": "Recipient email",
         "email_subject": "Filled document from Document Filler",
         "email_body": "Please find the filled document attached. You can open it directly in Google Docs from this email.",
+        "select_doc": "Select document to work on:",
+        "no_docs": "No documents uploaded yet.",
+        "upload_more": "Upload another document",
+        "doc_ready": "Document ready for filling.",
+        "doc_name": "Document name",
     },
     "fr": {
         "title": "📄 Remplisseur de documents",
@@ -144,6 +149,11 @@ LANG = {
         "recipient_email": "Email du destinataire",
         "email_subject": "Document rempli depuis Document Filler",
         "email_body": "Veuillez trouver le document rempli en pièce jointe. Vous pouvez l'ouvrir directement dans Google Docs à partir de cet email.",
+        "select_doc": "Sélectionnez le document à travailler :",
+        "no_docs": "Aucun document téléchargé.",
+        "upload_more": "Télécharger un autre document",
+        "doc_ready": "Document prêt à être rempli.",
+        "doc_name": "Nom du document",
     },
     "es": {
         "title": "📄 Rellenador de documentos",
@@ -176,6 +186,11 @@ LANG = {
         "recipient_email": "Email del destinatario",
         "email_subject": "Documento rellenado desde Document Filler",
         "email_body": "Adjunto encontrará el documento rellenado. Puede abrirlo directamente en Google Docs desde este email.",
+        "select_doc": "Seleccione el documento para trabajar:",
+        "no_docs": "No se han subido documentos.",
+        "upload_more": "Subir otro documento",
+        "doc_ready": "Documento listo para rellenar.",
+        "doc_name": "Nombre del documento",
     }
 }
 
@@ -343,12 +358,7 @@ def send_email_attachment(recipient, subject, body, file_bytes, filename):
         st.error(f"Email error: {e}")
         return False
 
-# ---------- MAIN PAGE ----------
-st.title(t("title"))
-st.caption(t("company") + " | " + t("built_by"))
-
-uploaded_file = st.file_uploader(t("upload_label"), type=["pdf", "docx"], help=t("upload_help"))
-
+# ---------- GET GROQ CLIENT ----------
 def get_groq_client():
     api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
@@ -356,209 +366,217 @@ def get_groq_client():
         return None
     return Groq(api_key=api_key)
 
+# ---------- INIT SESSION STATE ----------
+if "documents" not in st.session_state:
+    st.session_state.documents = []  # list of dict: {name, file_bytes, file_type, fields, values, filled_ready, filled_bytes, filled_filename}
+if "selected_doc_idx" not in st.session_state:
+    st.session_state.selected_doc_idx = None
+
+# ---------- MAIN PAGE ----------
+st.title(t("title"))
+st.caption(t("company") + " | " + t("built_by"))
+
+# ---------- UPLOAD SECTION ----------
+uploaded_file = st.file_uploader(t("upload_label"), type=["pdf", "docx"], help=t("upload_help"), key="file_uploader")
+
 if uploaded_file is not None:
-    file_type = uploaded_file.type
+    # Check if this file already exists in documents
+    file_name = uploaded_file.name
+    existing = [d for d in st.session_state.documents if d["name"] == file_name]
+    if existing:
+        st.info(f"Document '{file_name}' already uploaded. Select it from the dropdown below.")
+    else:
+        # Process the file
+        file_bytes = uploaded_file.getvalue()
+        file_type = uploaded_file.type
+        if "pdf" in file_type:
+            try:
+                reader = PdfReader(io.BytesIO(file_bytes))
+                fields = reader.get_fields()
+                if fields:
+                    field_names = list(fields.keys())
+                    new_doc = {
+                        "name": file_name,
+                        "file_bytes": file_bytes,
+                        "file_type": "pdf",
+                        "fields": field_names,
+                        "values": {},
+                        "filled_ready": False,
+                        "filled_bytes": None,
+                        "filled_filename": None
+                    }
+                    st.session_state.documents.append(new_doc)
+                    st.success(f"✅ Uploaded PDF with {len(field_names)} fields.")
+                else:
+                    st.warning(t("error_fields"))
+            except Exception as e:
+                st.error(f"Error processing PDF: {e}")
+        elif "word" in file_type or "vnd.openxmlformats-officedocument.wordprocessingml.document" in file_type:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            doc = DocxDocument(tmp_path)
+            full_text = " ".join([p.text for p in doc.paragraphs])
+            placeholders = re.findall(r'{{(.*?)}}', full_text)
+            placeholders = list(set(placeholders))
+            os.unlink(tmp_path)
+            if placeholders:
+                new_doc = {
+                    "name": file_name,
+                    "file_bytes": file_bytes,
+                    "file_type": "docx",
+                    "fields": placeholders,
+                    "values": {},
+                    "filled_ready": False,
+                    "filled_bytes": None,
+                    "filled_filename": None
+                }
+                st.session_state.documents.append(new_doc)
+                st.success(f"✅ Uploaded Word with {len(placeholders)} placeholders.")
+            else:
+                st.warning("No placeholders found in this Word document.")
+        else:
+            st.warning(t("error_upload"))
+        # Clear the uploader to allow another upload
+        st.rerun()
 
-    if "pdf" in file_type:
-        try:
-            reader = PdfReader(uploaded_file)
-            fields = reader.get_fields()
-            if not fields:
-                st.warning(t("error_fields"))
-                st.stop()
-            field_names = list(fields.keys())
-            st.success(f"✅ Found {len(field_names)} fillable fields.")
-            st.subheader(t("fields_title"))
+# ---------- DOCUMENT SELECTION ----------
+if st.session_state.documents:
+    doc_names = [d["name"] for d in st.session_state.documents]
+    selected_name = st.selectbox(t("select_doc"), doc_names, index=0)
+    selected_idx = doc_names.index(selected_name)
+    st.session_state.selected_doc_idx = selected_idx
+    doc = st.session_state.documents[selected_idx]
 
-            user_description = st.text_area(t("auto_fill_hint"), height=100)
-            if st.button(t("auto_fill_btn")):
-                client = get_groq_client()
-                if client:
-                    prompt = f"""
-                    You are a helpful assistant that fills PDF form fields.
-                    The form has the following fields: {field_names}.
-                    The user has described the information as: "{user_description}".
-                    Please provide a JSON object mapping each field name to a suitable value.
-                    If you don't know a field, suggest a plausible value based on the context.
-                    Only output valid JSON.
-                    """
-                    try:
-                        model = "llama-3.1-8b-instant"
-                        response = client.chat.completions.create(
-                            model=model,
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.7,
-                            max_tokens=1024
-                        )
-                        ai_output = response.choices[0].message.content
-                        json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
-                        if json_match:
-                            ai_values = json.loads(json_match.group())
-                        else:
-                            ai_values = json.loads(ai_output)
-                        for f in field_names:
-                            if f in ai_values:
-                                st.session_state[f"field_{f}"] = ai_values[f]
-                        st.success("✅ AI suggestions applied! Review and adjust below.")
-                    except Exception as e:
-                        st.error(f"AI error: {e}")
+    st.subheader(f"📄 {doc['name']}")
+    st.caption(t("doc_ready"))
 
-            field_values = {}
-            cols = st.columns(2)
-            for idx, field in enumerate(field_names):
-                with cols[idx % 2]:
-                    default_val = st.session_state.get(f"field_{field}", "")
-                    st.markdown(f"**{field}**")
-                    if default_val:
-                        st.caption(f"{t('ai_suggest')} {default_val}")
-                    val = st.text_input(t("value_label"), value=default_val, key=f"input_{field}")
-                    field_values[field] = val
+    # Show fields and values
+    fields = doc["fields"]
+    if not fields:
+        st.warning("No fields to fill.")
+    else:
+        st.markdown(f"### {t('fields_title')} ({len(fields)} fields)")
+        
+        # Description for AI
+        user_description = st.text_area(t("auto_fill_hint"), height=100, key=f"desc_{selected_idx}")
+        if st.button(t("auto_fill_btn"), key=f"ai_{selected_idx}"):
+            client = get_groq_client()
+            if client:
+                prompt = f"""
+                You are a helpful assistant that fills document placeholders or form fields.
+                The fields are: {fields}.
+                The user described: "{user_description}".
+                Provide a JSON mapping each field to a suitable value.
+                Only output JSON.
+                """
+                try:
+                    model = "llama-3.1-8b-instant"
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7,
+                        max_tokens=1024
+                    )
+                    ai_output = response.choices[0].message.content
+                    json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
+                    if json_match:
+                        ai_values = json.loads(json_match.group())
+                    else:
+                        ai_values = json.loads(ai_output)
+                    for f in fields:
+                        if f in ai_values:
+                            doc["values"][f] = ai_values[f]
+                    st.success("✅ AI suggestions applied! Review and adjust below.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"AI error: {e}")
 
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(t("download_pdf")):
+        # Manual editing
+        cols = st.columns(2)
+        for idx, field in enumerate(fields):
+            with cols[idx % 2]:
+                default_val = doc["values"].get(field, "")
+                st.markdown(f"**{field}**")
+                if default_val:
+                    st.caption(f"{t('ai_suggest')} {default_val}")
+                val = st.text_input(t("value_label"), value=default_val, key=f"input_{selected_idx}_{field}")
+                doc["values"][field] = val
+
+        # Buttons for this document
+        col1, col2 = st.columns(2)
+        with col1:
+            if doc["file_type"] == "pdf":
+                if st.button(t("download_pdf"), key=f"dlpdf_{selected_idx}"):
                     writer = PdfWriter()
-                    uploaded_file.seek(0)
-                    reader2 = PdfReader(uploaded_file)
-                    writer.append(reader2)
-                    for field, value in field_values.items():
+                    reader = PdfReader(io.BytesIO(doc["file_bytes"]))
+                    writer.append(reader)
+                    for field, value in doc["values"].items():
                         if field in writer.get_fields():
                             writer.update_page_form_field_values(writer.pages[0], {field: value})
                     output = io.BytesIO()
                     writer.write(output)
                     output.seek(0)
                     file_bytes = output.getvalue()
+                    doc["filled_bytes"] = file_bytes
+                    doc["filled_filename"] = "filled_" + doc["name"]
+                    doc["filled_ready"] = True
                     st.download_button(
                         label="📥 Download Filled PDF",
                         data=file_bytes,
-                        file_name="filled_document.pdf",
+                        file_name=doc["filled_filename"],
                         mime="application/pdf"
                     )
                     st.success(t("success_fill"))
-                    # Store file for email
-                    st.session_state["pdf_bytes"] = file_bytes
-                    st.session_state["pdf_filename"] = "filled_document.pdf"
-
-            with col2:
-                if st.button(t("send_email")):
-                    if "pdf_bytes" not in st.session_state:
-                        st.warning("Please generate the PDF first by clicking Download.")
-                    else:
-                        recipient = st.secrets.get("EMAIL_TO", "deslandes78@gmail.com")
-                        subject = t("email_subject")
-                        body = t("email_body")
-                        if send_email_attachment(
-                            recipient,
-                            subject,
-                            body,
-                            st.session_state["pdf_bytes"],
-                            st.session_state["pdf_filename"]
-                        ):
-                            st.success(t("email_sent"))
-                        else:
-                            st.error(t("email_error"))
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-
-    elif "word" in file_type or "vnd.openxmlformats-officedocument.wordprocessingml.document" in file_type:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            tmp.write(uploaded_file.getvalue())
-            tmp_path = tmp.name
-
-        doc = DocxDocument(tmp_path)
-        full_text = " ".join([p.text for p in doc.paragraphs])
-        placeholders = re.findall(r'{{(.*?)}}', full_text)
-        placeholders = list(set(placeholders))
-        if not placeholders:
-            st.warning("No placeholders found in this Word document.")
-        else:
-            st.success(f"✅ Found placeholders: {placeholders}")
-            st.subheader(t("fields_title"))
-
-            user_description = st.text_area(t("auto_fill_hint"), height=100)
-            if st.button(t("auto_fill_btn")):
-                client = get_groq_client()
-                if client:
-                    prompt = f"""
-                    You are a helpful assistant that fills Word document placeholders.
-                    The placeholders are: {placeholders}.
-                    The user described: "{user_description}".
-                    Provide a JSON mapping each placeholder to a suitable value.
-                    Only output JSON.
-                    """
-                    try:
-                        model = "llama-3.1-8b-instant"
-                        response = client.chat.completions.create(
-                            model=model,
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.7,
-                            max_tokens=1024
-                        )
-                        ai_output = response.choices[0].message.content
-                        json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
-                        if json_match:
-                            ai_values = json.loads(json_match.group())
-                        else:
-                            ai_values = json.loads(ai_output)
-                        for p in placeholders:
-                            if p in ai_values:
-                                st.session_state[f"field_{p}"] = ai_values[p]
-                        st.success("✅ AI suggestions applied!")
-                    except Exception as e:
-                        st.error(f"AI error: {e}")
-
-            placeholder_values = {}
-            cols = st.columns(2)
-            for idx, placeholder in enumerate(placeholders):
-                with cols[idx % 2]:
-                    default_val = st.session_state.get(f"field_{placeholder}", "")
-                    st.markdown(f"**{{{{{placeholder}}}}}**")
-                    if default_val:
-                        st.caption(f"{t('ai_suggest')} {default_val}")
-                    val = st.text_input(t("value_label"), value=default_val, key=f"input_{placeholder}")
-                    placeholder_values[placeholder] = val
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(t("download_docx")):
-                    context = placeholder_values
+            else:  # docx
+                if st.button(t("download_docx"), key=f"dldocx_{selected_idx}"):
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                        tmp.write(doc["file_bytes"])
+                        tmp_path = tmp.name
                     docx_template = DocxTemplate(tmp_path)
-                    docx_template.render(context)
+                    docx_template.render(doc["values"])
                     output = io.BytesIO()
                     docx_template.save(output)
                     output.seek(0)
                     file_bytes = output.getvalue()
+                    doc["filled_bytes"] = file_bytes
+                    doc["filled_filename"] = "filled_" + doc["name"]
+                    doc["filled_ready"] = True
                     st.download_button(
                         label="📥 Download Filled Word",
                         data=file_bytes,
-                        file_name="filled_document.docx",
+                        file_name=doc["filled_filename"],
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     )
                     st.success(t("success_fill"))
-                    st.session_state["docx_bytes"] = file_bytes
-                    st.session_state["docx_filename"] = "filled_document.docx"
+                    os.unlink(tmp_path)
 
-            with col2:
-                if st.button(t("send_email")):
-                    if "docx_bytes" not in st.session_state:
-                        st.warning("Please generate the Word file first by clicking Download.")
+        with col2:
+            if st.button(t("send_email"), key=f"email_{selected_idx}"):
+                if not doc["filled_ready"]:
+                    st.warning("Please generate the filled file first by clicking Download.")
+                else:
+                    recipient = st.secrets.get("EMAIL_TO", "deslandes78@gmail.com")
+                    subject = t("email_subject")
+                    body = t("email_body")
+                    if send_email_attachment(
+                        recipient,
+                        subject,
+                        body,
+                        doc["filled_bytes"],
+                        doc["filled_filename"]
+                    ):
+                        st.success(t("email_sent"))
                     else:
-                        recipient = st.secrets.get("EMAIL_TO", "deslandes78@gmail.com")
-                        subject = t("email_subject")
-                        body = t("email_body")
-                        if send_email_attachment(
-                            recipient,
-                            subject,
-                            body,
-                            st.session_state["docx_bytes"],
-                            st.session_state["docx_filename"]
-                        ):
-                            st.success(t("email_sent"))
-                        else:
-                            st.error(t("email_error"))
+                        st.error(t("email_error"))
 
-        os.unlink(tmp_path)
+        # Option to remove this document
+        if st.button(f"🗑️ Remove '{doc['name']}'", key=f"remove_{selected_idx}"):
+            st.session_state.documents.pop(selected_idx)
+            st.rerun()
+
+    st.divider()
+    st.info(t("upload_more") + " – use the file uploader above to add another document.")
 
 else:
     st.info("📂 " + t("upload_help"))
