@@ -1,7 +1,7 @@
 import streamlit as st
 import io
 import json
-from openai import OpenAI
+from groq import Groq  # <-- using Groq instead of OpenAI
 from pypdf import PdfReader, PdfWriter
 from docx import Document as DocxDocument
 from docxtpl import DocxTemplate
@@ -95,8 +95,9 @@ LANG = {
         "email": "✉️ deslandes78@gmail.com",
         "error_upload": "Please upload a PDF or DOCX file.",
         "error_fields": "No fillable fields found in this PDF.",
-        "error_api": "OpenAI API key not set. Please add OPENAI_API_KEY in secrets.",
+        "error_api": "Groq API key not set. Please add GROQ_API_KEY in secrets.",
         "success_fill": "Document filled successfully!",
+        "ai_provider": "Groq (Llama 3.1)",
     },
     "fr": {
         "title": "📄 Remplisseur de documents",
@@ -119,8 +120,9 @@ LANG = {
         "email": "✉️ deslandes78@gmail.com",
         "error_upload": "Veuillez télécharger un fichier PDF ou DOCX.",
         "error_fields": "Aucun champ remplissable trouvé dans ce PDF.",
-        "error_api": "Clé API OpenAI non définie. Ajoutez OPENAI_API_KEY dans les secrets.",
+        "error_api": "Clé API Groq non définie. Ajoutez GROQ_API_KEY dans les secrets.",
         "success_fill": "Document rempli avec succès !",
+        "ai_provider": "Groq (Llama 3.1)",
     },
     "es": {
         "title": "📄 Rellenador de documentos",
@@ -143,8 +145,9 @@ LANG = {
         "email": "✉️ deslandes78@gmail.com",
         "error_upload": "Por favor, sube un archivo PDF o DOCX.",
         "error_fields": "No se encontraron campos rellenables en este PDF.",
-        "error_api": "Clave API de OpenAI no configurada. Agrega OPENAI_API_KEY en los secretos.",
+        "error_api": "Clave API de Groq no configurada. Agrega GROQ_API_KEY en los secretos.",
         "success_fill": "¡Documento rellenado con éxito!",
+        "ai_provider": "Groq (Llama 3.1)",
     }
 }
 
@@ -171,6 +174,8 @@ with st.sidebar:
         index=0
     )
     st.session_state.lang = lang_choice
+
+    st.info(f"🤖 AI: {t('ai_provider')}")
 
 # ---------- PURPLE THEME CSS ----------
 st.markdown("""
@@ -229,13 +234,13 @@ st.caption(t("company") + " | " + t("built_by"))
 # File upload
 uploaded_file = st.file_uploader(t("upload_label"), type=["pdf", "docx"], help=t("upload_help"))
 
-# Helper function to get OpenAI client
-def get_openai_client():
-    api_key = st.secrets.get("OPENAI_API_KEY")
+# Helper function to get Groq client
+def get_groq_client():
+    api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
         st.error(t("error_api"))
         return None
-    return OpenAI(api_key=api_key)
+    return Groq(api_key=api_key)
 
 if uploaded_file is not None:
     file_type = uploaded_file.type
@@ -254,7 +259,7 @@ if uploaded_file is not None:
             # User description for AI auto-fill
             user_description = st.text_area(t("auto_fill_hint"), height=100)
             if st.button(t("auto_fill_btn")):
-                client = get_openai_client()
+                client = get_groq_client()
                 if client:
                     prompt = f"""
                     You are a helpful assistant that fills PDF form fields.
@@ -265,12 +270,12 @@ if uploaded_file is not None:
                     Only output valid JSON.
                     """
                     try:
-                        # Use gpt-3.5-turbo as fallback; you can change to "gpt-4" if you have access
-                        model = "gpt-3.5-turbo"
+                        model = "llama-3.1-8b-instant"  # Fast, free, good for structured output
                         response = client.chat.completions.create(
                             model=model,
                             messages=[{"role": "user", "content": prompt}],
-                            temperature=0.7
+                            temperature=0.7,
+                            max_tokens=1024
                         )
                         ai_output = response.choices[0].message.content
                         # Extract JSON from response
@@ -342,7 +347,7 @@ if uploaded_file is not None:
             # User description for AI
             user_description = st.text_area(t("auto_fill_hint"), height=100)
             if st.button(t("auto_fill_btn")):
-                client = get_openai_client()
+                client = get_groq_client()
                 if client:
                     prompt = f"""
                     You are a helpful assistant that fills Word document placeholders.
@@ -352,11 +357,12 @@ if uploaded_file is not None:
                     Only output JSON.
                     """
                     try:
-                        model = "gpt-3.5-turbo"
+                        model = "llama-3.1-8b-instant"
                         response = client.chat.completions.create(
                             model=model,
                             messages=[{"role": "user", "content": prompt}],
-                            temperature=0.7
+                            temperature=0.7,
+                            max_tokens=1024
                         )
                         ai_output = response.choices[0].message.content
                         json_match = re.search(r'\{.*\}', ai_output, re.DOTALL)
